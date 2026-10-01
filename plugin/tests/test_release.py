@@ -25,12 +25,25 @@ class ReleaseGuards(unittest.TestCase):
         self.assertEqual(set(spec['supported_files']),{'BackpackBattles.exe','BackpackBattles.pck','steam_api64.dll','libgdsqlite.dll'})
         self.assertTrue(all(len(h)==64 for h in spec['supported_files'].values()))
 
-    def test_precision_is_a_measured_estimate(self):
+    def test_historical_precision_fixture_is_not_live_accuracy(self):
         import json
         p=json.loads((ROOT/'plugin/precision.json').read_text(encoding='utf-8'))
         self.assertEqual(p['trial_count'],2400)
         self.assertEqual(len(p['cases']),12)
         self.assertGreaterEqual(p['mean_error_percent'],0)
         self.assertEqual(p['batch_size'],10)
+
+    def test_random_transformer_is_in_public_build_sources(self):
+        import ast
+        source=(ROOT/'plugin/packaging/build_release.py').read_text(encoding='utf-8')
+        tree=ast.parse(source)
+        names=[node.value for node in ast.walk(tree) if isinstance(node,ast.Constant) and isinstance(node.value,str)]
+        self.assertIn('common_random',names)
+        self.assertIn('cosmetic_random',names)
+        self.assertIn('presentation_free',names)
+        self.assertIn('test_presentation',names)
+        self.assertIn('test_common_random',names)
+        builder=(ROOT/'plugin/packaging/build_worker.py').read_text(encoding='utf-8')
+        self.assertIn('from common_random import patch_native',builder)
 
 if __name__=='__main__':unittest.main()
