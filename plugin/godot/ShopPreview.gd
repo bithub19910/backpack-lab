@@ -35,6 +35,12 @@ static func placement(item, inventory):
 
 static func row(item, location):
 	var data = {"id": item.getName(), "cell": location.cell, "face": location.face, "data": item.getData(), "gems": []}
+	if not item.has_meta("lab_rng_key"):
+		var counters = ItemBook.get_meta("lab_rng_counters") if ItemBook.has_meta("lab_rng_counters") else {}
+		counters[item.getName()] = counters.get(item.getName(), 0) + 1
+		item.set_meta("lab_rng_key", item.getName() + "#" + str(counters[item.getName()]))
+		ItemBook.set_meta("lab_rng_counters", counters)
+	data["rng_key"] = item.get_meta("lab_rng_key")
 	for gem in item.getGems():
 		data.gems.append(null if gem == null else {"id": gem.getName(), "face": gem.getFaceDirection(), "data": gem.getData()})
 	return data

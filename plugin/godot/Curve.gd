@@ -7,8 +7,12 @@ var palette = [Color("ff777e"), Color("52d3b1"), Color("62baff"), Color("f2c563"
 var metric = "damage"
 
 func _ready():
-	rect_min_size = Vector2(280, 230)
+	rect_min_size = Vector2(280, 280)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	connect("resized", self, "square_minimum")
+
+func square_minimum():
+	rect_min_size.y = max(280, rect_size.x)
 
 func points_for(data, key):
 	var values = data.sides[0].get(key, [])

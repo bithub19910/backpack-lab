@@ -40,7 +40,32 @@ static func capture(character):
 			row.gems.append(null if gem == null else {"id": gem.getName(),
 				"face": gem.getFaceDirection(), "data": gem.getData()})
 		board.items.append(row)
-	return board
+	# Assign once per live object, so moving/rotating/reinserting does not change
+	# its sample identity. Different item types cannot renumber existing objects.
+	var counters = ItemBook.get_meta("lab_rng_counters") if ItemBook.has_meta("lab_rng_counters") else {}
+	for i in board.items.size():
+		var item = character.INVENTORY.getItems()[i]
+		if not item.has_meta("lab_rng_key"):
+			counters[item.getName()] = counters.get(item.getName(), 0) + 1
+			item.set_meta("lab_rng_key", item.getName() + "#" + str(counters[item.getName()]))
+		board.items[i]["rng_key"] = item.get_meta("lab_rng_key")
+	ItemBook.set_meta("lab_rng_counters", counters)
+	return normalize(board)
+
+class RowOrder:
+	static func less(a, b):
+		return str(a.get("rng_key", a.id + str(a.cell))) < str(b.get("rng_key", b.id + str(b.cell)))
+
+static func normalize(board):
+	var copy = board.duplicate(true)
+	copy.items.sort_custom(RowOrder, "less")
+	var counts = {}
+	for row in copy.items:
+		counts[row.id] = counts.get(row.id, 0) + 1
+		if not row.has("rng_key"):
+			row["rng_key"] = row.id + "#" + str(counts[row.id])
+	copy.items.sort_custom(RowOrder, "less")
+	return copy
 
 static func context():
 	var rules = []
@@ -49,8 +74,9 @@ static func context():
 	return {"mode": Game.curMode, "round": Game.curRound, "league": Game.getLeague(Game.curClass),
 		"custom_rules": rules, "custom_rules_active": CustomRules.customRulesActive}
 
-static func install(character, board, owner):
-	character.setClass(int(board["class"]), false)
+static func install(character, board, owner, reusable = null):
+	if reusable == null:
+		character.setClass(int(board["class"]), false)
 	character.setMaxHealth(float(board.health))
 	character.baseMaxStamina = float(board.base_stamina)
 	character.setMaxStamina(float(board.stamina))
@@ -61,10 +87,23 @@ static func install(character, board, owner):
 				return "未知物品：" + str(row.id)
 			if ItemBook.getDescriptor(row.id).hasType(Item.Type.Bag) == want_bags:
 				ordered.append(row)
+	var final_order = []
 	for row in ordered:
-		var item = ItemBook.instantiateItem(row.id)
+		var item = null
+		if reusable != null:
+			for entry in reusable:
+				if same(entry.row, row):
+					item = entry.item
+					reusable.erase(entry)
+					break
+		if item != null:
+			final_order.append(item)
+			continue
+		item = ItemBook.instantiateItem(row.id)
+		final_order.append(item)
 		var source_key = str(character.playerId) + ":" + str(row.id) + ":" + str(row.cell)
 		item.set_meta("lab_source_key", source_key)
+		item.set_meta("lab_rng_key", row.get("rng_key", row.id + str(row.cell)))
 		item.set_meta("lab_cell", row.cell)
 		item.ownerType = owner
 		character.INVENTORY.itemNode.add_child(item)
@@ -82,6 +121,7 @@ static func install(character, board, owner):
 				return "宝石槽数据无效"
 			var gem = ItemBook.instantiateItem(gem_row.id)
 			gem.set_meta("lab_source_key", source_key + ":gem:" + str(i))
+			gem.set_meta("lab_rng_key", item.get_meta("lab_rng_key") + ":gem:" + str(i))
 			gem.set_meta("lab_cell", row.cell)
 			item.setGem(i, gem)
 			gem.setFaceDirectionInstant(int(gem_row.face))
@@ -89,7 +129,36 @@ static func install(character, board, owner):
 				gem.setData(gem_row.data)
 		if row.get("data") != null:
 			item.setData(row.data)
+	character.INVENTORY.items = final_order
+	# Physics callbacks follow scene-tree order. Reconciliation must not leave
+	# a reinserted item at the end and silently change same-frame attack order.
+	for i in final_order.size():
+		character.INVENTORY.itemNode.move_child(final_order[i], i)
 	return ""
+
+static func reconcile(character, before, board, owner):
+	var reusable = []
+	var remaining = board.items.duplicate(true)
+	for item in character.INVENTORY.getItems().duplicate():
+		var row = null
+		for candidate in before.items:
+			if candidate.id == item.getName() and Vector2(candidate.cell[0], candidate.cell[1]) == item.getTopLeftCell():
+				row = candidate
+				break
+		var found = -1
+		for i in remaining.size():
+			if same(row, remaining[i]):
+				found = i
+				break
+		if found >= 0:
+			reusable.append({"row": row, "item": item})
+			remaining.remove(found)
+		else:
+			character.INVENTORY.removeItem(item)
+			item.discard()
+	var reused = reusable.size()
+	var error = install(character, board, owner, reusable)
+	return {"error": error, "reused": reused, "created": board.items.size() - reused}
 
 static func read_json(path):
 	var file = File.new()
@@ -107,10 +176,22 @@ static func write_json(path, value):
 	if file.open(path + ".tmp", File.WRITE) != OK:
 		return false
 	file.store_string(JSON.print(value))
+	var written = file.get_error() == OK
 	file.close()
+	if not written:
+		return false
 	var dir = Directory.new()
 	if file.file_exists(path):
 		dir.remove(path + ".bak")
-		if dir.rename(path, path + ".bak") != OK:
+		if not rename_retry(dir, path, path + ".bak"):
 			return false
-	return dir.rename(path + ".tmp", path) == OK
+	return rename_retry(dir, path + ".tmp", path)
+
+static func rename_retry(dir, from, to):
+	# Windows may hold an inbox open briefly while a worker reads it.
+	for attempt in 6:
+		if dir.rename(from, to) == OK:
+			return true
+		if attempt < 5:
+			OS.delay_msec(2)
+	return false

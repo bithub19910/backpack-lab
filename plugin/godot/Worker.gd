@@ -23,6 +23,15 @@ var trial_started_msec = 0
 var prepare_ms = 0
 var log_path = "user://logs/godot.log"
 var heartbeat_seen_msec = 0
+var warm = preload("res://BackpackLab/WarmState.gd").new()
+var warm_player = null
+var warm_enemy = null
+var warm_context = null
+var allocation = {}
+var warming = false
+var warm_path = ""
+const TrialRandom = preload("res://BackpackLab/TrialRandom.gd")
+
 
 func _ready():
 	process_priority = 10000
@@ -62,6 +71,8 @@ func boot():
 			log_path = arg.trim_prefix("--lab-log=")
 		if arg.begins_with("--lab-heartbeat="):
 			parent_heartbeat = arg.trim_prefix("--lab-heartbeat=")
+		if arg.begins_with("--lab-warm="):
+			warm_path = arg.trim_prefix("--lab-warm=")
 		if arg.begins_with("--lab-inbox="):
 			inbox = arg.trim_prefix("--lab-inbox=")
 		if arg.begins_with("--lab-request="):
@@ -92,6 +103,17 @@ func boot():
 		Snapshot.write_json(inbox + ".ready", {"status": "ready", "pid": OS.get_process_id()})
 		idle()
 		protocol_ready = true
+		var previous = Snapshot.read_json(warm_path)
+		if typeof(previous) == TYPE_DICTIONARY and Snapshot.same(previous.get("rules"), rules):
+			request = previous
+			output_path = inbox + ".warm"
+			if validate_request() == "":
+				warming = true
+				running = true
+				finishing = true
+				Engine.target_fps = 0
+				OS.low_processor_usage_mode = false
+				call_deferred("begin_trial")
 		return
 	if "--lab-smoke" in OS.get_cmdline_args():
 		Game.initStartInventory()
@@ -232,6 +254,9 @@ func validate_request():
 		if board["class"] < 0 or board["class"] >= Game.getNumClasses() or board.health <= 0 or board.items.size() > 128:
 			return "阵容参数无效"
 	request["rules"] = rules
+	request.player = Snapshot.normalize(request.player)
+	if request.mode == "opponent":
+		request.opponent = Snapshot.normalize(request.opponent)
 	return ""
 
 func begin_trial():
@@ -251,37 +276,73 @@ func begin_trial():
 	Game.ropeSpeedups.clear()
 	Game.cubeAdvanced.clear()
 	Game.sandbagActive = false
-	if Game.OPPONENT:
-		Game.freeOpponent()
-	if Game.PLAYER:
-		Game.PLAYER.INVENTORY.deleteItems()
-		Game.PLAYER.INVENTORY.queue_free()
-		Game.PLAYER.queue_free()
-		Game.PLAYER = null
-	yield(get_tree(), "idle_frame")
+	var enemy = request.get("opponent", {})
+	if request.mode == "dummy":
+		enemy = {"class": 0, "health": 10000.0, "base_stamina": 5.0, "stamina": 5.0, "items": []}
+	var reuse = request.get("reuse_objects", true) and warm_player != null and warm_context != null and Snapshot.same(warm_context, request.context) and warm_player["class"] == request.player["class"] and warm_enemy["class"] == enemy["class"]
+	if reuse:
+		reuse = warm.restore()
+	var unchanged = reuse and Snapshot.same(warm_player, request.player) and Snapshot.same(warm_enemy, enemy)
+	allocation = {"reused": 0, "created": 0, "warm": reuse}
+	if not reuse:
+		warm.entries.clear()
+		warm.seen.clear()
+		if Game.OPPONENT:
+			Game.freeOpponent()
+		if Game.PLAYER:
+			Game.PLAYER.INVENTORY.deleteItems()
+			Game.PLAYER.INVENTORY.queue_free()
+			Game.PLAYER.queue_free()
+			Game.PLAYER = null
+		yield(get_tree(), "idle_frame")
 	Game.lab_context = request.context
 	Game.curMode = int(request.context.get("mode", 0))
 	Game.curRound = int(request.context.get("round", 1))
 	for i in request.context.get("custom_rules", []).size():
 		CustomRules.values[i] = request.context.custom_rules[i]
 	CustomRules.customRulesActive = request.context.get("custom_rules_active", false)
-	Game.instanceCharacter(int(request.player["class"]))
-	Game.OPPONENT = Game.opponentScene.instance()
-	Game.OPPONENT.playerId = Character.ID.OPPONENT
-	Game.opponentNode.add_child(Game.OPPONENT)
+	if not reuse:
+		Game.instanceCharacter(int(request.player["class"]))
+		Game.OPPONENT = Game.opponentScene.instance()
+		Game.OPPONENT.playerId = Character.ID.OPPONENT
+		Game.opponentNode.add_child(Game.OPPONENT)
+		Game.OPPONENT.connect("character_died", Game, "endCombat")
 	Game.PLAYER.setOpponent(Game.OPPONENT)
 	Game.OPPONENT.setOpponent(Game.PLAYER)
-	Game.OPPONENT.connect("character_died", Game, "endCombat")
-	var enemy = request.get("opponent", {})
-	if request.mode == "dummy":
-		enemy = {"class": 0, "health": 10000.0, "base_stamina": 5.0, "stamina": 5.0, "items": []}
-	var error = Snapshot.install(Game.PLAYER, request.player, Item.Owner.PlayerInventory)
-	if error == "":
-		error = Snapshot.install(Game.OPPONENT, enemy, Item.Owner.Opponent)
-	if error != "":
-		fail(error)
+	var error = ""
+	for side in 2:
+		var character = Game.PLAYER if side == 0 else Game.OPPONENT
+		var board = request.player if side == 0 else enemy
+		var owner = Item.Owner.PlayerInventory if side == 0 else Item.Owner.Opponent
+		if unchanged:
+			allocation.reused += board.items.size()
+		elif reuse:
+			var changed = Snapshot.reconcile(character, warm_player if side == 0 else warm_enemy, board, owner)
+			error = changed.error
+			allocation.reused += changed.reused
+			allocation.created += changed.created
+		else:
+			error = Snapshot.install(character, board, owner)
+			allocation.created += board.items.size()
+		if error != "":
+			warm_player = null
+			fail(error)
+			return
+	if not unchanged:
+		yield(get_tree(), "idle_frame")
+		if request.get("reuse_objects", true) or warming:
+			warm_player = request.player.duplicate(true)
+			warm_enemy = enemy.duplicate(true)
+			warm_context = request.context.duplicate(true)
+			# Freeze clean objects before any preparation, shuffle or combat mutation.
+			warm.capture([Game.PLAYER, Game.PLAYER.INVENTORY, Game.OPPONENT, Game.OPPONENT.INVENTORY] + Game.PLAYER.INVENTORY.getItems() + Game.OPPONENT.INVENTORY.getItems())
+		else:
+			warm_player = null
+	if warming:
+		warming = false
+		Snapshot.write_json(inbox + ".warmed", {"status": "ok", "created": allocation.created})
+		idle()
 		return
-	yield(get_tree(), "idle_frame")
 	Game.PLAYER.setMaxStamina(float(request.player.stamina))
 	Game.OPPONENT.setMaxStamina(float(enemy.stamina))
 	Game.PLAYER.cleanse()
@@ -301,10 +362,14 @@ func begin_trial():
 	Game.PLAYER.shopToCombat()
 	var ours = Game.PLAYER.INVENTORY.getItems().duplicate()
 	var theirs = Game.OPPONENT.INVENTORY.getItems().duplicate()
-	ours.shuffle()
-	ours.sort_custom(Game.ItemSort, "sort_TriggerPriority")
-	theirs.shuffle()
-	theirs.sort_custom(Game.ItemSort, "sort_TriggerPriority")
+	ours = TrialRandom.order(ours, trial_seed, 0)
+	theirs = TrialRandom.order(theirs, trial_seed, 1)
+	for character in [Game.PLAYER, Game.OPPONENT]:
+		character.lab_choice_rng = TrialRandom.stream(trial_seed, "character:" + str(character.playerId), "choice")
+		for buff in character.buffs.values():
+			buff.lab_reset_rng(trial_seed)
+		for key in ["accuracyRng", "critRng", "critResistanceRng", "stunResistanceRng"]:
+			character.get(key).lab_rng = TrialRandom.stream(trial_seed, "character:" + str(character.playerId), key)
 	item_order = ours + theirs
 	Game.call_deferred("prepareItems", item_order)
 	Util.callDelayed(self, "activate_trial", Game.COMBAT_DELAY)
@@ -330,8 +395,9 @@ func finish_trial():
 	var duration = terminal_time if terminal_time >= 0.0 else Game.combatTimer.combatTime
 	var combat_ms = OS.get_ticks_msec() - start_msec
 	var extract_started = OS.get_ticks_msec()
-	var sides = Statistics.extract(float(request.horizon))
+	var sides = [] if request.get("summary_only", false) else Statistics.extract(float(request.horizon))
 	trials.append({"index": trials.size(), "seed": int(request.seed) + trials.size(),
+		"allocation": allocation.duplicate(true),
 		"timing_ms": {"prepare": prepare_ms, "combat": combat_ms, "extract": OS.get_ticks_msec() - extract_started},
 		"outcome": outcome, "duration": duration, "sides": sides,
 		"remaining_health": [Game.PLAYER.curHealth, Game.OPPONENT.curHealth]})
@@ -358,7 +424,7 @@ func finish_trial():
 			if "SCRIPT ERROR:" in native_log:
 				fail("原版脚本报告异常；本次结果未通过完整性检查")
 				return
-		var result = Statistics.aggregate(trials, request.mode, float(request.horizon))
+		var result = Statistics.aggregate(trials, request.mode, float(request.horizon), request.get("summary_only", false))
 		result["id"] = request.id
 		result["status"] = "ok"
 		result["elapsed_ms"] = OS.get_ticks_msec() - started_msec
@@ -371,6 +437,8 @@ func finish_trial():
 			idle()
 
 func fail(message):
+	warm_player = null
+	warming = false
 	print("LAB_FAILURE ", message)
 	if output_path != "":
 		Snapshot.write_json(output_path, {"status": "error", "message": message})

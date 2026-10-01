@@ -2,6 +2,36 @@ extends Reference
 
 const STEP = 0.1
 
+# Approximate two-sided Student-t mean intervals. These describe sampling
+# variability, not agreement with the real game or unobserved rare outcomes.
+static func mean_interval(values):
+	var n = values.size()
+	if n < 2:
+		return {"count": n, "relative": null, "half_width": null}
+	var average = 0.0
+	for value in values:
+		average += value / n
+	var squares = 0.0
+	for value in values:
+		squares += pow(value - average, 2)
+	var df = n - 1
+	var critical = [0.0, 12.706, 4.303, 3.182, 2.776, 2.571, 2.447, 2.365, 2.306, 2.262,
+		2.228, 2.201, 2.179, 2.160, 2.145, 2.131, 2.120, 2.110, 2.101, 2.093, 2.086,
+		2.080, 2.074, 2.069, 2.064, 2.060, 2.056, 2.052, 2.048, 2.045, 2.042]
+	var t = critical[df] if df <= 30 else (2.042 if df < 60 else 2.001)
+	var half = t * sqrt(squares / df / n)
+	return {"count": n, "mean": average, "half_width": half,
+		"relative": half / abs(average) if abs(average) > 0.000001 else null}
+
+static func sampling_uncertainty(data):
+	var output = []
+	var recovery = []
+	for trial in data.trials:
+		var own = trial.sides[0]
+		output.append(own.damage.back() / data.horizon)
+		recovery.append((own.effective_heal.back() + own.overheal.back() + own.max_health.back() + own.armor.back()) / data.horizon)
+	return {"output": mean_interval(output), "recovery": mean_interval(recovery)}
+
 static func wilson(wins, count):
 	if count <= 0:
 		return null
@@ -64,12 +94,12 @@ static func extract(horizon):
 			"max_health": health, "armor": armor, "metrics": totals})
 	return output
 
-static func aggregate(trials, mode, horizon):
+static func aggregate(trials, mode, horizon, summary_only = false):
 	var wins = 0
 	var losses = 0
 	var unresolved = 0
 	var sides = []
-	for side in 2:
+	for side in (0 if summary_only else 2):
 		var combined = {}
 		for key in ["damage", "effective_heal", "overheal", "max_health", "armor"]:
 			var values = []
