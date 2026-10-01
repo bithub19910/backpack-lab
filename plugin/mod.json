@@ -1,0 +1,17 @@
+{
+  "id": "backpack-lab",
+  "name": "背包实验室 / Backpack Lab",
+  "version": "0.2.0",
+  "game": "Backpack Battles",
+  "game_version": "1.1.9b",
+  "platform": "windows-x64",
+  "license": "MIT",
+  "entrypoint": "BackpackLab.exe",
+  "homepage": "https://github.com/bithub19910/backpack-lab",
+  "supported_files": {
+    "BackpackBattles.exe": "4522a5f2b71fe2aa5f7f730a2bd71f66f4f8112609164bcef39c110f047ad577",
+    "BackpackBattles.pck": "db6748170c3173bb8c6a9b91370465bfc86fb30341a7a0ddc8bfc8d3381f4817",
+    "steam_api64.dll": "dcfaa13aa419a0641917205957dbe15aa472e7cf09a28cf8d3cf429598e67799",
+    "libgdsqlite.dll": "23dad7df122ff7b24ececdf492b3156a02fc77e5fe33494f546f7584c5b2e2aa"
+  }
+}

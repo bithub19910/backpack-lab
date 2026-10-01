@@ -1,0 +1,157 @@
+{
+  "schema": 1,
+  "game_version": "1.1.9b",
+  "horizon": 15,
+  "batch_size": 10,
+  "reference_trials_per_case": 100,
+  "heldout_trials_per_case": 100,
+  "cases": [
+    {
+      "name": "class0-round3",
+      "mode": "dummy",
+      "class": 0,
+      "round": 3,
+      "reference_rates": [
+        5.51800005,
+        1.08800006
+      ],
+      "mean_error_percent": 4.257341194684155,
+      "max_error_percent": 23.406851650357446
+    },
+    {
+      "name": "class0-round3",
+      "mode": "opponent",
+      "class": 0,
+      "round": 3,
+      "reference_rates": [
+        4.4833333699999995,
+        1.63200002
+      ],
+      "mean_error_percent": 2.107069730644422,
+      "max_error_percent": 5.800654340678256
+    },
+    {
+      "name": "class1-round7",
+      "mode": "dummy",
+      "class": 1,
+      "round": 7,
+      "reference_rates": [
+        9.8546667,
+        7.52466639
+      ],
+      "mean_error_percent": 2.3931433096035435,
+      "max_error_percent": 8.672708332185387
+    },
+    {
+      "name": "class1-round7",
+      "mode": "opponent",
+      "class": 1,
+      "round": 7,
+      "reference_rates": [
+        7.0053332699999995,
+        7.20199978
+      ],
+      "mean_error_percent": 2.8242177059485463,
+      "max_error_percent": 10.677579512216425
+    },
+    {
+      "name": "class2-round12",
+      "mode": "dummy",
+      "class": 2,
+      "round": 12,
+      "reference_rates": [
+        6.68733331,
+        18.49933337
+      ],
+      "mean_error_percent": 1.8388089924112783,
+      "max_error_percent": 4.874889210509532
+    },
+    {
+      "name": "class2-round12",
+      "mode": "opponent",
+      "class": 2,
+      "round": 12,
+      "reference_rates": [
+        4.5753333,
+        16.09800002
+      ],
+      "mean_error_percent": 1.7932060546008992,
+      "max_error_percent": 7.037736463920559
+    },
+    {
+      "name": "class3-round7",
+      "mode": "dummy",
+      "class": 3,
+      "round": 7,
+      "reference_rates": [
+        9.90933333,
+        12.45933332
+      ],
+      "mean_error_percent": 0.8944753865730246,
+      "max_error_percent": 4.938107476095987
+    },
+    {
+      "name": "class3-round7",
+      "mode": "opponent",
+      "class": 3,
+      "round": 7,
+      "reference_rates": [
+        15.41599994,
+        12.01333333
+      ],
+      "mean_error_percent": 0.9845668967740048,
+      "max_error_percent": 3.044455382892282
+    },
+    {
+      "name": "class5-round3",
+      "mode": "dummy",
+      "class": 5,
+      "round": 3,
+      "reference_rates": [
+        4.27133333,
+        1.95933315
+      ],
+      "mean_error_percent": 0.7756521054898807,
+      "max_error_percent": 3.012330344164461
+    },
+    {
+      "name": "class5-round3",
+      "mode": "opponent",
+      "class": 5,
+      "round": 3,
+      "reference_rates": [
+        3.99799998,
+        1.90133329
+      ],
+      "mean_error_percent": 1.2152170278086503,
+      "max_error_percent": 3.7852271324923836
+    },
+    {
+      "name": "class6-round12",
+      "mode": "dummy",
+      "class": 6,
+      "round": 12,
+      "reference_rates": [
+        24.33066663,
+        39.12266663
+      ],
+      "mean_error_percent": 1.1739757254236411,
+      "max_error_percent": 3.0030686832849764
+    },
+    {
+      "name": "class6-round12",
+      "mode": "opponent",
+      "class": 6,
+      "round": 12,
+      "reference_rates": [
+        24.97733333,
+        36.55933335
+      ],
+      "mean_error_percent": 1.5915981969483284,
+      "max_error_percent": 6.555276371450816
+    }
+  ],
+  "mean_error_percent": 1.820772693909198,
+  "trial_count": 2400,
+  "method": "Equal-weight case mean absolute percentage error of ten-trial output and recovery rates against independent 100-trial reference means; zero/zero channels excluded. Six historical builds replayed under current rules in dummy and mirrored-opponent modes. Sampling variation only; not accuracy against live game or a confidence bound."
+}
