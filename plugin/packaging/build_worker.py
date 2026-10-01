@@ -86,6 +86,19 @@ func lab_clear_delayed_calls():
     combat_timer = (RULES / 'decompiled/Interface__CombatTimer__CombatTimer.gd').read_text(encoding='utf-8')
     combat_timer = replace_function(combat_timer, 'updateTimer', '\tpass')
     (patched / 'CombatTimer.gd').write_text(combat_timer, encoding='utf-8')
+    # Pure cosmetic flicker schedules random idle callbacks on newly built items.
+    # Removing it in BOTH execution paths isolates combat RNG from node age.
+    flicker = (RULES / 'decompiled/Items__Animations__FlickerAnimation.gd').read_text(encoding='utf-8')
+    for method in ('_ready', 'onAnimationEnded', 'playAni'):
+        flicker = replace_function(flicker, method, '\tpass')
+    (patched / 'FlickerAnimation.gd').write_text(flicker, encoding='utf-8')
+    character = (RULES / 'decompiled/Core__Character.gd').read_text(encoding='utf-8')
+    # Idle animation timers consume the shared RNG depending on object age.
+    # They have no combat effect; disable them in cold and reused workers alike.
+    character = replace_function(character, 'randAnimationSpeed', '\tpass')
+    (patched / 'Character.gd').write_text(character, encoding='utf-8')
+    from common_random import patch_native
+    random_overrides = patch_native(RULES, patched, item, character)
     compiler = (RULES / 'decompiled/Utility__MaterialCompiler.gd').read_text(encoding='utf-8')
     compiler = replace_function(compiler, '_ready', '\tcall_deferred("lab_finish")')
     compiler += '\nfunc lab_finish():\n\temit_signal("finished_loading_materials")\n\tqueue_free()\n'
@@ -104,18 +117,21 @@ func lab_clear_delayed_calls():
     project['application/run/low_processor_mode_sleep_usec'] = variant(0)
     project['autoload/BackpackLab'] = variant('*res://BackpackLab/Worker.gd')
     overrides = {'res://project.binary': encode_project(project)}
-    for name, folder in (('Game', 'Core'), ('RunDatabase', 'Core'), ('Util', 'Utility'), ('Settings', 'Utility'), ('Item', 'Items'), ('CombatTimer', 'Interface/CombatTimer'), ('MaterialCompiler', 'Utility')):
+    for name, folder in (('Game', 'Core'), ('RunDatabase', 'Core'), ('Util', 'Utility'), ('Settings', 'Utility'), ('Item', 'Items'), ('CombatTimer', 'Interface/CombatTimer'), ('MaterialCompiler', 'Utility'), ('FlickerAnimation', 'Items/Animations'), ('Character', 'Core')):
         overrides[f'res://BackpackLab/{name}.gdc'] = (patched / f'{name}.gdc').read_bytes()
         overrides[f'res://{folder}/{name}.gd.remap'] = f'[remap]\npath="res://BackpackLab/{name}.gdc"\n'.encode()
     for path in (ROOT / 'plugin/godot').glob('*.gd'):
         overrides[f'res://BackpackLab/{path.name}'] = path.read_bytes()
+    for original, name in random_overrides.items():
+        overrides[f'res://BackpackLab/{name}.gdc'] = (patched / f'{name}.gdc').read_bytes()
+        overrides[original + '.remap'] = f'[remap]\npath="res://BackpackLab/{name}.gdc"\n'.encode()
     preview = OUTPUT / 'smoke.json'
     if preview.exists():
         overrides['res://BackpackLab/preview.json'] = preview.read_bytes()
     overrides['res://BackpackLab/rules.json'] = json.dumps({
         'schema': 1, 'game_version': '1.1.9b', 'source_pck_sha256': actual,
-        'engine_sha256': manifest['source_exe_sha256'], 'worker_version': '0.2.0',
-        'implementation_sha256': hashlib.sha256(b''.join(path.read_bytes() for path in sorted((ROOT / 'plugin/godot').glob('*.gd'))) + (ROOT / 'plugin/packaging/build_worker.py').read_bytes()).hexdigest(),
+        'engine_sha256': manifest['source_exe_sha256'], 'worker_version': json.loads((ROOT / 'plugin/mod.json').read_text(encoding='utf-8'))['version'],
+        'implementation_sha256': hashlib.sha256(b''.join(path.read_bytes() for path in sorted((ROOT / 'plugin/godot').glob('*.gd'))) + b''.join((ROOT / ('plugin/packaging/' + name + '.py')).read_bytes() for name in ['build_worker', 'common_random', 'cosmetic_random', 'presentation_free'])).hexdigest(),
     }).encode()
     build_archive(source, OUTPUT / 'BackpackLabWorker.pck', overrides)
     shutil.copy2(GAME / 'BackpackBattles.exe', OUTPUT / 'BackpackLabWorker.exe')

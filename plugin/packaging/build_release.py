@@ -11,13 +11,14 @@ from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[2]
 PUBLIC=ROOT/'outputs/github-source'
-RELEASE=ROOT/'outputs/release/BackpackLab-0.2.0-windows-x64'
+VERSION=json.loads((ROOT/'plugin/mod.json').read_text(encoding='utf-8'))['version']
+RELEASE=ROOT/f'outputs/release/BackpackLab-{VERSION}-windows-x64'
 
 def source_files():
     files=[]
     for pattern in ('plugin/godot/*.gd','plugin/windows/*.cs','plugin/docs/*.md','plugin/tests/*.gd','plugin/tests/test_*.py'):
         files += list(ROOT.glob(pattern))
-    for name in ('native','pck','capture_rules','build_worker','build_plugin','build_windows','installer_backend','build_release','benchmark_precision','test_frontend','run_native'):
+    for name in ('native','pck','capture_rules','common_random','cosmetic_random','presentation_free','build_worker','build_plugin','build_windows','installer_backend','build_release','benchmark_precision','test_frontend','test_common_random','test_presentation','test_reuse','run_native'):
         files.append(ROOT/f'plugin/packaging/{name}.py')
     files += [ROOT/'plugin/mod.json',ROOT/'plugin/precision.json']
     return files
@@ -67,7 +68,7 @@ def package():
     with zipfile.ZipFile(zip_path,'w',zipfile.ZIP_DEFLATED,compresslevel=6) as z:
         for p in RELEASE.rglob('*'):
             if p.is_file():z.write(p,p.relative_to(RELEASE.parent))
-    source_zip=RELEASE.parent/'BackpackLab-0.2.0-source.zip'
+    source_zip=RELEASE.parent/f'BackpackLab-{VERSION}-source.zip'
     with zipfile.ZipFile(source_zip,'w',zipfile.ZIP_DEFLATED) as z:
         for row in audit:z.write(PUBLIC/row['path'],row['path'])
     (RELEASE.parent/'SHA256SUMS.txt').write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in (zip_path,source_zip)),encoding='utf-8')
