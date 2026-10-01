@@ -1,7 +1,7 @@
 {
   "id": "backpack-lab",
   "name": "背包实验室 / Backpack Lab",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "game": "Backpack Battles",
   "game_version": "1.1.9b",
   "platform": "windows-x64",
