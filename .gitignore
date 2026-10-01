@@ -1,0 +1,13 @@
+data/
+outputs/
+.tmp/
+__pycache__/
+*.pyc
+*.exe
+*.dll
+*.pck
+*.gdc
+*.gde
+*.log
+*.spec
+.env*
